@@ -1,0 +1,15 @@
+
+> survive-the-night@0.18.0 dev
+> npm-run-all --parallel dev:*
+
+
+> survive-the-night@0.18.0 dev:website
+> npm run dev --workspace=packages/website
+
+
+> survive-the-night@0.18.0 dev:server
+> npm run dev --workspace=packages/game-server
+
+
+> survive-the-night@0.18.0 dev:biome-editor
+> npm run dev --workspace=packages/biome-editor-server

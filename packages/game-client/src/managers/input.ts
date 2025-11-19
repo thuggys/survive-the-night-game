@@ -558,6 +558,24 @@ export class InputManager {
     return inputs;
   }
 
+  setJoystickInput(dx: number, dy: number) {
+    this.inputs.dx = dx;
+    this.inputs.dy = dy;
+    this.updateDirection();
+    this.checkIfChanged();
+  }
+
+  setButtonInput(action: "fire" | "interact" | "sprint" | "drop" | "consume", state: boolean) {
+    if (action in this.inputs) {
+      this.inputs[action] = state;
+      this.checkIfChanged();
+    }
+  }
+
+  cycleInventory(direction: 1 | -1) {
+    this.cycleItem(direction);
+  }
+
   setInventorySlot(slot: number) {
     const maxSlots = getConfig().player.MAX_INVENTORY_SLOTS;
     if (slot < 1 || slot > maxSlots) {

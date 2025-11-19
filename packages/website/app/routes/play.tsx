@@ -4,6 +4,7 @@ import { PredictionConfigPanel } from "./play/components/PredictionConfigPanel";
 import { InstructionPanel } from "./play/components/InstructionPanel";
 import { CraftingPanel } from "./play/components/CraftingPanel";
 import { SpawnPanel } from "./play/components/SpawnPanel";
+import { MobileControls } from "./play/components/MobileControls";
 import { Button } from "~/components/ui/button";
 import { DropdownMenu, DropdownMenuItem } from "~/components/ui/dropdown-menu";
 
@@ -242,6 +243,9 @@ function GameClientLoader() {
           onToggle={() => setShowSpawnPanel(!showSpawnPanel)}
         />
       )}
+
+      {/* Mobile Controls */}
+      <MobileControls gameClient={gameClient} />
     </div>
   );
 }
