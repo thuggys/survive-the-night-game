@@ -80,6 +80,9 @@ export class UWebSocketsServerAdapter implements IServerAdapter {
         // Generate unique socket ID
         const socketId = `uwebsocket_${++this.nextSocketId}_${Date.now()}`;
 
+        // Subscribe to global "all" topic for native pub/sub broadcasting
+        ws.subscribe("all");
+
         // Get query params from userData (set during upgrade)
         const userData = ws.getUserData();
         const queryParams = userData.queryParams || {};
@@ -116,6 +119,18 @@ export class UWebSocketsServerAdapter implements IServerAdapter {
           }
         }
       },
+      drain: (ws: uWS.WebSocket<WebSocketUserData>) => {
+        // Monitor backpressure - check buffered amount
+        const bufferedAmount = ws.getBufferedAmount();
+        if (bufferedAmount > 1024 * 1024) {
+          // More than 1MB buffered - client is lagging
+          console.warn(
+            `High buffered amount for socket: ${bufferedAmount} bytes. Client may be lagging.`
+          );
+        }
+        // For game servers, we typically don't queue old data - fresh state is more important
+        // If you need to resume sending, implement a queue system here
+      },
     });
   }
 
@@ -143,6 +158,22 @@ export class UWebSocketsServerAdapter implements IServerAdapter {
       return successCount > 0;
     } catch (error) {
       console.error("Error broadcasting event:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Native pub/sub broadcasting using uWebSockets' C++ layer
+   * This is significantly faster than the JavaScript loop in emit()
+   * @param topic - Topic to publish to (e.g., "all")
+   * @param message - Binary message to broadcast
+   * @param isBinary - Whether message is binary
+   */
+  publish(topic: string, message: ArrayBuffer | Uint8Array, isBinary: boolean): boolean {
+    try {
+      return this.app.publish(topic, message, isBinary);
+    } catch (error) {
+      console.error("Error publishing to topic:", error);
       return false;
     }
   }

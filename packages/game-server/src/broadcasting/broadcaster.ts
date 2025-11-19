@@ -9,6 +9,7 @@ import { GameServer } from "@/core/server";
 import { TickPerformanceTracker } from "@/util/tick-performance-tracker";
 import { BufferManager } from "./buffer-manager";
 import { serializeServerEvent } from "@shared/events/server-sent/server-event-serialization";
+import { eventTypeRegistry } from "@shared/util/event-type-encoding";
 
 export interface BroadcastDependencies {
   io: IServerAdapter;
@@ -205,10 +206,25 @@ export class Broadcaster {
     const endWebSocketEmit =
       this.deps.tickPerformanceTracker?.startMethod("webSocketEmit", "broadcastGameState") ||
       (() => {});
-    // Send buffer directly instead of serializing to objects
+
+    // Send buffer directly using native pub/sub for maximum performance
     const buffer = this.deps.bufferManager.getBuffer();
-    // this.deps.bufferManager.logStats();
-    this.deps.delayedIo.emit(event.getType(), buffer);
+
+    // Use native publish if available (uWebSockets.js only)
+    if (this.deps.io.publish) {
+      // Prepend event type ID once (instead of per-socket)
+      const eventTypeId = eventTypeRegistry.encode(event.getType() as any);
+      const eventTypeBuffer = Buffer.allocUnsafe(1);
+      eventTypeBuffer.writeUInt8(eventTypeId, 0);
+      const message = Buffer.concat([eventTypeBuffer, buffer]);
+
+      // Native C++ broadcasting - O(1) JS call instead of O(N) loop
+      this.deps.io.publish("all", message, true);
+    } else {
+      // Fallback to loop-based broadcasting (Socket.IO)
+      this.deps.delayedIo.emit(event.getType(), buffer);
+    }
+
     endWebSocketEmit();
   }
 
@@ -219,11 +235,24 @@ export class Broadcaster {
     // Try to serialize as binary, fall back to JSON if not supported
     const serializedData = event.serialize();
     const binaryBuffer = serializeServerEvent(event.getType(), [serializedData]);
+
     if (binaryBuffer !== null) {
-      // Send as binary
-      this.deps.delayedIo.emit(event.getType(), binaryBuffer);
+      // Use native publish if available (uWebSockets.js only)
+      if (this.deps.io.publish) {
+        // Prepend event type ID
+        const eventTypeId = eventTypeRegistry.encode(event.getType() as any);
+        const eventTypeBuffer = Buffer.allocUnsafe(1);
+        eventTypeBuffer.writeUInt8(eventTypeId, 0);
+        const message = Buffer.concat([eventTypeBuffer, binaryBuffer]);
+
+        // Native C++ broadcasting
+        this.deps.io.publish("all", message, true);
+      } else {
+        // Fallback to loop-based broadcasting
+        this.deps.delayedIo.emit(event.getType(), binaryBuffer);
+      }
     } else {
-      // Fall back to JSON
+      // Fall back to JSON (still uses loop-based emit)
       this.deps.delayedIo.emit(event.getType(), serializedData);
     }
   }
@@ -238,13 +267,33 @@ export class Broadcaster {
     wrapSocket: (socket: ISocketAdapter) => any
   ): void {
     const delayedSocket = wrapSocket(socket);
-    delayedSocket.emit(ServerSentEvents.MAP, mapData);
 
-    const yourIdBuffer = serializeServerEvent(ServerSentEvents.YOUR_ID, [playerId]);
-    if (yourIdBuffer !== null) {
-      delayedSocket.emit(ServerSentEvents.YOUR_ID, yourIdBuffer);
+    // Use corking to batch MAP and YOUR_ID into a single TCP packet
+    // This reduces syscalls and TCP overhead during connection
+    const underlyingSocket = (socket as any).getUnderlyingSocket?.();
+
+    if (underlyingSocket && typeof underlyingSocket.cork === "function") {
+      // uWebSockets.js - batch emissions
+      underlyingSocket.cork(() => {
+        delayedSocket.emit(ServerSentEvents.MAP, mapData);
+
+        const yourIdBuffer = serializeServerEvent(ServerSentEvents.YOUR_ID, [playerId]);
+        if (yourIdBuffer !== null) {
+          delayedSocket.emit(ServerSentEvents.YOUR_ID, yourIdBuffer);
+        } else {
+          delayedSocket.emit(ServerSentEvents.YOUR_ID, playerId);
+        }
+      });
     } else {
-      delayedSocket.emit(ServerSentEvents.YOUR_ID, playerId);
+      // Fallback for Socket.IO (no corking available)
+      delayedSocket.emit(ServerSentEvents.MAP, mapData);
+
+      const yourIdBuffer = serializeServerEvent(ServerSentEvents.YOUR_ID, [playerId]);
+      if (yourIdBuffer !== null) {
+        delayedSocket.emit(ServerSentEvents.YOUR_ID, yourIdBuffer);
+      } else {
+        delayedSocket.emit(ServerSentEvents.YOUR_ID, playerId);
+      }
     }
   }
 }

@@ -16,6 +16,16 @@ export interface IServerAdapter {
   emit(event: string, ...args: any[]): boolean;
 
   /**
+   * Native pub/sub broadcasting (uWebSockets.js only)
+   * Bypasses JavaScript loop and broadcasts directly via C++
+   * @param topic - The topic to publish to (e.g., "all")
+   * @param message - Binary message to broadcast
+   * @param isBinary - Whether the message is binary
+   * @returns true if published successfully
+   */
+  publish?(topic: string, message: ArrayBuffer | Uint8Array, isBinary: boolean): boolean;
+
+  /**
    * Start listening on a port
    */
   listen(port: number, callback?: () => void): void;

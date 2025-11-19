@@ -10,7 +10,7 @@ const textDecoder = new TextDecoder();
  * uWebSockets WebSocket type (from uWebSockets.js)
  */
 type UWebSocket = {
-  send: (message: ArrayBuffer | string, isBinary?: boolean, compress?: boolean) => number;
+  send: (message: ArrayBuffer | Uint8Array | string, isBinary?: boolean, compress?: boolean) => number;
   close: () => void;
   getRemoteAddressAsText: () => ArrayBuffer;
   getRemoteAddress: () => ArrayBuffer;
@@ -62,13 +62,10 @@ export class UWebSocketsSocketAdapter implements ISocketAdapter {
         eventTypeBuffer.writeUInt8(eventTypeId, 0);
         // Combine: [eventTypeId (1 byte)][bufferData]
         const combinedBuffer = Buffer.concat([eventTypeBuffer, args[0]]);
-        // Convert to ArrayBuffer for uWebSockets
-        // Create a new ArrayBuffer by copying the buffer data to ensure correct format
-        const arrayBuffer = combinedBuffer.buffer.slice(
-          combinedBuffer.byteOffset,
-          combinedBuffer.byteOffset + combinedBuffer.byteLength
-        );
-        const result = this.ws.send(arrayBuffer, true); // Send as binary
+
+        // Zero-copy: uWebSockets.js natively handles Uint8Array (which Buffer extends)
+        // No need to convert to ArrayBuffer - this eliminates a memory copy
+        const result = this.ws.send(combinedBuffer, true); // Send as binary
         return result === 1; // 1 = success in uWebSockets
       }
       // Otherwise, serialize as JSON
